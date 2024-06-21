@@ -5,23 +5,12 @@
 1. Git clone this repository:
 
 ```
-git clone https://github.com/MedARC-AI/MindEyeV2.git
-```
-
-2. Download https://huggingface.co/datasets/pscotti/mindeyev2 and place them in the same folder as your git clone.
-Warning: **This will download over 120 GB of data!** You may want to only download some parts of the huggingface dataset (e.g., not all the pretrained models contained in "train_logs")
-
-```
-cd MindEyeV2
-git clone https://huggingface.co/datasets/pscotti/mindeyev2 .
-```
-
-or for specifically downloading only parts of the dataset (will need to edit depending on what you want to download):
-```
 from huggingface_hub import snapshot_download, hf_hub_download
-snapshot_download(repo_id="pscotti/mindeyev2", repo_type = "dataset", revision="main", allow_patterns="*.tar",
+snapshot_download(repo_id="pscotti/mindeyev2", repo_type = "dataset", revision="main", allow_patterns="*.tar", cache_dir = "./cache",
     local_dir= "your_local_dir", local_dir_use_symlinks = False, resume_download = True)
-hf_hub_download(repo_id="pscotti/mindeyev2", filename="coco_images_224_float16.hdf5", repo_type="dataset")
+hf_hub_download(repo_id="pscotti/mindeyev2", local_dir="../data/",filename="betas_all_subj01_fp32.hdf5", repo_type="dataset") # repeat for other subj if needed
+hf_hub_download(repo_id="pscotti/mindeyev2", local_dir="../data/", filename="coco_images_224_float16.hdf5", repo_type="dataset")
+hf_hub_download(repo_id="pscotti/mindeyev2", local_dir="../data/", filename="betas_all_subj01_fp32_renorm.hdf5", repo_type="dataset")
 ```
 
 3. Run ```. src/setup.sh``` to install a new "fmri" virtual environment. Make sure the virtual environment is activated with "source fmri/bin/activate".
