@@ -311,7 +311,7 @@ print(f"currently using {seq_len} seq_len (chose {seq_past} past behav and {seq_
 
 # %%
 # Load 73k NSD images
-f = h5py.File(f'./glm-mne-nirs/Marley/wiki_images_224_float16.hdf5', 'r')
+f = h5py.File(data_path + 'wiki_images_224_float16.hdf5', 'r')
 images = f['images'][:] # if you go OOM you can remove the [:] so it isnt preloaded to cpu! (will require a few edits elsewhere tho)
 images = torch.Tensor(images).to("cpu").to(data_type)
 print("Loaded all 73k possible NSD images to cpu!", images.shape)
