@@ -237,7 +237,7 @@ parser.add_argument(
     "--max_lr",type=float,default=3e-4,
 )
 parser.add_argument(
-    "--noise_level",type=int,default=0,
+    "--noise_level",type=float,default=0,
 )
 
 if utils.is_interactive():
@@ -340,6 +340,10 @@ for s in subj_list:
     betas = f['betas'][:]
     if noise_level:
         betas = betas + np.random.normal(0, noise_level, betas.shape)
+        # normalize again
+        betas = (betas - betas.mean()) / betas.std()
+        np.save(f"{data_path}/{noise_level}_1cm_surface10.8")
+
     betas = torch.Tensor(betas).to("cpu").to(data_type)
     num_voxels_list.append(betas[0].shape[-1])
     num_voxels[f'subj0{s}'] = betas[0].shape[-1]
