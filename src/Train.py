@@ -60,8 +60,9 @@ accelerator = Accelerator(split_batches=False, mixed_precision="fp16")
 if utils.is_interactive(): # set batch size here if using interactive notebook instead of submitting job
     global_batch_size = batch_size = 8
 else:
-    global_batch_size = os.environ["GLOBAL_BATCH_SIZE"]
-    batch_size = int(os.environ["GLOBAL_BATCH_SIZE"]) // num_devices
+    global_batch_size = 8
+    # global_batch_size = os.environ["GLOBAL_BATCH_SIZE"]
+    # batch_size = int(os.environ["GLOBAL_BATCH_SIZE"]) // num_devices
 
 
 # In[3]:
@@ -235,6 +236,9 @@ parser.add_argument(
 parser.add_argument(
     "--max_lr",type=float,default=3e-4,
 )
+parser.add_argument(
+    "--noise_level",type=int,default=0,
+)
 
 if utils.is_interactive():
     args = parser.parse_args(jupyter_args)
@@ -327,11 +331,15 @@ for s in subj_list:
     if downsampled:
         # filename = f'{data_path}/betas_1cm_subj01.hdf5'
         # filename = f'{data_path}/betas_9mm_1783_subj01_convolved.hdf5'
-        filename = f'{data_path}/betas_9mm_367_subj01_convolved.hdf5'
+        # filename = f'{data_path}/betas_9mm_367_subj01_convolved.hdf5'
+        # filename = f'{data_path}/betas_1cm_surface3_subj01.hdf5'
+        filename = f'{data_path}/betas_1cm_surface10.8_subj01.hdf5'
     else:
         filename = f'{data_path}/betas_all_subj0{s}_fp32_renorm.hdf5'
     f = h5py.File(filename, 'r')
     betas = f['betas'][:]
+    if noise_level:
+        betas = betas + np.random.normal(0, noise_level, betas.shape)
     betas = torch.Tensor(betas).to("cpu").to(data_type)
     num_voxels_list.append(betas[0].shape[-1])
     num_voxels[f'subj0{s}'] = betas[0].shape[-1]
@@ -692,7 +700,10 @@ num_params = utils.count_params(model)
 
 if local_rank==0 and wandb_log: # only use main process for wandb logging
     import wandb
-    wandb_project = 'mindeye'
+    if noise_level:
+        wandb_project = 'mindeye_noise'
+    else:
+        wandb_project = 'mindeye'
     print(f"wandb {wandb_project} run {model_name}")
     # need to configure wandb beforehand in terminal with "wandb init"!
     wandb_config = {
@@ -814,30 +825,6 @@ for epoch in progress_bar:
                 if seq_len==1:
                     voxel0 = voxel0.unsqueeze(1)
                 else:
-                    if seq_past>0:
-                        past_behavior = past_behav0[:,:(seq_past),5].cpu().long()
-                        past_voxel0 = voxels[f'subj0{subj_list[s]}'][past_behavior]
-                        past_voxel0[past_behavior==-1] = voxel0[torch.where(past_behavior==-1)[0]] # replace invalid past voxels 
-                        past_voxel0 = torch.Tensor(past_voxel0)
-
-                        # if shared1000, then you need to mask it out 
-                        for p in range(seq_past):
-                            mask = (past_behav0[:,p,-1] == 1) # [16,] bool
-                            index = torch.nonzero(mask.cpu()).squeeze()
-                            past_voxel0[index,p,:] = torch.zeros_like(past_voxel0[index,p,:])
-
-                    if seq_future>0:
-                        future_behavior = future_behav0[:,:(seq_future),5].cpu().long()
-                        future_voxel0 = voxels[f'subj0{subj_list[s]}'][future_behavior]
-                        future_voxel0[future_behavior==-1] = voxel0[torch.where(future_behavior==-1)[0]] # replace invalid past voxels 
-                        future_voxel0 = torch.Tensor(future_voxel0)
-
-                        # if shared1000, then you need to mask it out 
-                        for p in range(seq_future):
-                            mask = (future_behav0[:,p,-1] == 1) # [16,] bool
-                            index = torch.nonzero(mask.cpu()).squeeze()
-                            future_voxel0[index,p,:] = torch.zeros_like(future_voxel0[index,p,:])
-
                     # concatenate current timepoint with past/future
                     if seq_past > 0 and seq_future > 0:
                         voxel0 = torch.cat((voxel0.unsqueeze(1), past_voxel0), axis=1)
