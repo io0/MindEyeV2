@@ -700,10 +700,10 @@ num_params = utils.count_params(model)
 
 if local_rank==0 and wandb_log: # only use main process for wandb logging
     import wandb
-    if noise_level:
-        wandb_project = 'mindeye_noise'
-    else:
-        wandb_project = 'mindeye'
+    # if noise_level:
+    #     wandb_project = 'mindeye_noise'
+    # else:
+    wandb_project = 'mindeye'
     print(f"wandb {wandb_project} run {model_name}")
     # need to configure wandb beforehand in terminal with "wandb init"!
     wandb_config = {
@@ -789,6 +789,8 @@ for epoch in progress_bar:
 
     fwd_percent_correct = 0.
     bwd_percent_correct = 0.
+    test_fwd_top10 = 0.
+    test_bwd_top10 = 0.
     test_fwd_percent_correct = 0.
     test_bwd_percent_correct = 0.
     
@@ -1073,6 +1075,8 @@ for epoch in progress_bar:
                 if clip_scale>0:
                     # forward and backward top 1 accuracy        
                     labels = torch.arange(len(clip_voxels_norm)).to(clip_voxels_norm.device) 
+                    test_fwd_top10 += utils.topk(utils.batchwise_cosine_similarity(clip_voxels_norm, clip_target_norm), labels, k=10).item()
+                    test_bwd_top10 += utils.topk(utils.batchwise_cosine_similarity(clip_target_norm, clip_voxels_norm,), labels, k=10).item()
                     test_fwd_percent_correct += utils.topk(utils.batchwise_cosine_similarity(clip_voxels_norm, clip_target_norm), labels, k=1).item()
                     test_bwd_percent_correct += utils.topk(utils.batchwise_cosine_similarity(clip_target_norm, clip_voxels_norm), labels, k=1).item()
                 
@@ -1090,6 +1094,8 @@ for epoch in progress_bar:
                 "test/num_steps": len(test_losses),
                 "train/fwd_pct_correct": fwd_percent_correct / (train_i + 1),
                 "train/bwd_pct_correct": bwd_percent_correct / (train_i + 1),
+                "test/test_fwd_top10": test_fwd_top10,
+                "test/test_bwd_top10": test_bwd_top10,
                 "test/test_fwd_pct_correct": test_fwd_percent_correct / (test_i + 1),
                 "test/test_bwd_pct_correct": test_bwd_percent_correct / (test_i + 1),
                 "train/loss_clip_total": loss_clip_total / (train_i + 1),
