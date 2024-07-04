@@ -342,7 +342,7 @@ for s in subj_list:
         betas = betas + np.random.normal(0, noise_level, betas.shape)
         # normalize again
         betas = (betas - betas.mean()) / betas.std()
-        np.save(f"{data_path}/{noise_level}_1cm_surface10.8")
+        np.save(f"{data_path}/{noise_level}_1cm_surface10.8", betas)
 
     betas = torch.Tensor(betas).to("cpu").to(data_type)
     num_voxels_list.append(betas[0].shape[-1])
