@@ -22,6 +22,9 @@ import webdataset as wds
 import gc
 
 import matplotlib.pyplot as plt
+
+
+
 import torch
 import torch.nn as nn
 from torchvision import transforms
@@ -329,11 +332,15 @@ for s in subj_list:
     train_dl[f'subj0{s}'] = torch.utils.data.DataLoader(train_data[f'subj0{s}'], batch_size=batch_size, shuffle=False, drop_last=True, pin_memory=True)
 
     if downsampled:
+        filename= f'{data_path}/betas_all_subj01_fp32_renorm.hdf5'
         # filename = f'{data_path}/betas_1cm_subj01.hdf5'
         # filename = f'{data_path}/betas_9mm_1783_subj01_convolved.hdf5'
-        # filename = f'{data_path}/betas_9mm_367_subj01_convolved.hdf5'
+        filename = f'{data_path}/betas_9mm_367_subj01_convolved.hdf5'
         # filename = f'{data_path}/betas_1cm_surface3_subj01.hdf5'
-        filename = f'{data_path}/betas_1cm_surface10.8_subj01.hdf5'
+        # filename = f'{data_path}/betas_1cm_surface10.8_subj01.hdf5'
+        # filename = f'{data_path}/betas_2cm_surface10.8_subj01.hdf5'
+        filename = f'{data_path}/betas_1mm_surface.hdf5'
+        filename = f'{data_path}/betas_1cm_surface1mm_subj01.hdf5'
     else:
         filename = f'{data_path}/betas_all_subj0{s}_fp32_renorm.hdf5'
     f = h5py.File(filename, 'r')
@@ -707,7 +714,7 @@ if local_rank==0 and wandb_log: # only use main process for wandb logging
     # if noise_level:
     #     wandb_project = 'mindeye_noise'
     # else:
-    wandb_project = 'mindeye'
+    wandb_project = 'mindeye-images'
     print(f"wandb {wandb_project} run {model_name}")
     # need to configure wandb beforehand in terminal with "wandb init"!
     wandb_config = {
@@ -1019,14 +1026,20 @@ for epoch in progress_bar:
 
                 loss=0.
                             
-                test_indices = torch.arange(len(test_voxel))[:300]
+                n_test = 1000
+                test_indices = torch.arange(len(test_voxel))[:n_test]
                 voxel = test_voxel[test_indices].to(device)
                 image = test_image[test_indices].to(device)
-                assert len(image) == 300
+                print("IMAGE", len(image))
+                assert len(image) == n_test
 
                 clip_target = clip_img_embedder(image.float())
-
-                for rep in range(3):
+                
+                averaged = True
+                n_reps = 1
+                if averaged:
+                    n_reps = 3
+                for rep in range(n_reps):
                     voxel_ridge = model.ridge(voxel[:,rep],0) # 0th index of subj_list
                     backbone0, clip_voxels0, blurry_image_enc_ = model.backbone(voxel_ridge)
                     if rep==0:
@@ -1035,8 +1048,9 @@ for epoch in progress_bar:
                     else:
                         clip_voxels += clip_voxels0
                         backbone += backbone0
-                clip_voxels /= 3
-                backbone /= 3
+                if averaged:
+                    clip_voxels /= 3
+                    backbone /= 3
 
                 if clip_scale>0:
                     clip_voxels_norm = nn.functional.normalize(clip_voxels.flatten(1), dim=-1)
@@ -1084,6 +1098,51 @@ for epoch in progress_bar:
                     test_fwd_percent_correct += utils.topk(utils.batchwise_cosine_similarity(clip_voxels_norm, clip_target_norm), labels, k=1).item()
                     test_bwd_percent_correct += utils.topk(utils.batchwise_cosine_similarity(clip_target_norm, clip_voxels_norm), labels, k=1).item()
                 
+                # if (epoch == num_epochs-1):
+                if clip_scale>0:
+                    
+                    # Get the array of images, ordered by similarity
+                    # 10 images per test image
+                    num_test_images = clip_voxels_norm.shape[0]
+                    num_similar_images = 10
+                    
+                    # Compute cosine similarity between all pairs of images
+                    similarity_matrix = utils.batchwise_cosine_similarity(clip_voxels_norm, clip_target_norm)
+                    
+                    # Get the indices of the top 10 most similar images for each test image
+                    _, top_indices = torch.topk(similarity_matrix, k=num_similar_images, dim=1)
+                    
+                    n_cols = min(10, num_test_images)
+                    # Create an array to store the ordered images
+                    ordered_images = torch.zeros(n_cols, num_similar_images +1, 3, 224, 224, device=image.device)
+                    
+                    for i in range(n_cols):
+                        # Add the actual image as the first image
+                        arr = torch.cat([image[i].unsqueeze(0), image[top_indices[i]]], dim=0)
+                        print(f"arr shape: {arr.shape}")
+                        ordered_images[i] = arr
+                    
+                    logs = {}
+                    # Add the ordered images to the logs
+                    
+                    if wandb_log:
+                        fig, axes = plt.subplots(n_cols, num_similar_images +1, figsize=(50, 50))
+
+                        for i in range(n_cols):  # Log up to 5 sets of ordered images
+                            for j in range(num_similar_images + 1):
+                                axes[i, j].imshow(utils.torch_to_Image(ordered_images[i, j]))
+                                axes[i, j].axis('off')
+                                if j > 0:  # Skip the first image (original)
+                                    similarity_score = similarity_matrix[i, top_indices[i, j-1]].item()
+                                    # Custom color range: green for values above 0.04, red for below
+                                    norm = plt.Normalize(vmin=0, vmax=0.08)
+                                    cmap = plt.cm.RdYlGn
+                                    color = cmap(norm(max(similarity_score, 0.04)))
+                                    color = plt.cm.RdYlGn(similarity_score)  # Use RdYlGn colormap
+                                    axes[i, j].set_title(f"{similarity_score:.3f}", fontsize=8, color=color)
+                                    
+                        logs[f"images/ordered_images_{i}"] = wandb.Image(fig, caption=f"Top {num_similar_images} similar images for test image {i}")
+                        plt.close(fig)
                 utils.check_loss(loss)                
                 test_losses.append(loss.item())
 
@@ -1091,7 +1150,7 @@ for epoch in progress_bar:
             print("---")
 
             assert (test_i+1) == 1
-            logs = {"train/loss": np.mean(losses[-(train_i+1):]),
+            logs2 = {"train/loss": np.mean(losses[-(train_i+1):]),
                 "test/loss": np.mean(test_losses[-(test_i+1):]),
                 "train/lr": lrs[-1],
                 "train/num_steps": len(losses),
@@ -1115,6 +1174,8 @@ for epoch in progress_bar:
                 "train/loss_prior": loss_prior_total / (train_i + 1),
                 "test/loss_prior": test_loss_prior_total / (test_i + 1),
                 }
+            # Merge logs and logs2
+            logs.update(logs2)
 
             # if finished training, save jpg recons if they exist
             if (epoch == num_epochs-1) or (epoch % ckpt_interval == 0):
@@ -1166,6 +1227,7 @@ for epoch in progress_bar:
     # Save model checkpoint and reconstruct
     if (ckpt_saving) and (epoch % ckpt_interval == 0):
         save_ckpt(f'last')
+
 
     # wait for other GPUs to catch up if needed
     accelerator.wait_for_everyone()
